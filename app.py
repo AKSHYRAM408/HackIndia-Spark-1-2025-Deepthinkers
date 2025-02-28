@@ -2,85 +2,70 @@ import time
 import re
 import os
 import requests
-import shutil
 import streamlit as st
 from dotenv import load_dotenv
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
+from playwright.sync_api import sync_playwright
 
-# Load API Key securely from .env file
+# Load API Key securely from Streamlit Secrets
 load_dotenv()
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROK_API_KEY = os.getenv("GROQ_API_KEY")
+GROK_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-# Set up Selenium options
-def get_driver():
-    options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
+# Function to check if Playwright is installed
+def check_playwright():
+    try:
+        import playwright
+        return True
+    except ImportError:
+        return False
 
-    # Automatically detect paths
-    chrome_path = shutil.which("chromium") or shutil.which("google-chrome") or "/usr/bin/chromium-browser"
-    driver_path = shutil.which("chromedriver") or "/usr/bin/chromedriver"
-
-    if not chrome_path:
-        st.warning("⚠️ Chromium is missing. Install it or run locally.")
-        return None
-    if not driver_path:
-        st.warning("⚠️ ChromeDriver is missing. Install it or run locally.")
-        return None
-
-    service = Service(driver_path)
-    return webdriver.Chrome(service=service, options=options)
-
-# Function to scrape Instagram comments
+# Function to scrape Instagram comments using Playwright
 def scrape_instagram_comments(reel_url):
-    driver = get_driver()
-    if driver is None:
+    if not check_playwright():
+        st.warning("Playwright is not available. Please install Playwright.")
         return []
 
-    driver.get(reel_url)
-    time.sleep(5)
-
     comments = []
-    try:
-        comments_elements = driver.find_elements(By.CSS_SELECTOR, "ul li span")
-        comments = [comment.text for comment in comments_elements if comment.text.strip()]
-    except Exception as e:
-        st.error(f"Error scraping Instagram: {e}")
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(reel_url)
+        time.sleep(5)
 
-    driver.quit()
+        try:
+            comments_elements = page.query_selector_all("ul li span")
+            comments = [comment.inner_text() for comment in comments_elements if comment.inner_text().strip()]
+        except Exception as e:
+            st.error(f"Error scraping Instagram: {e}")
+
+        browser.close()
     return comments
 
-# Function to scrape YouTube comments
+# Function to scrape YouTube comments using Playwright
 def scrape_youtube_comments(video_url):
-    driver = get_driver()
-    if driver is None:
+    if not check_playwright():
+        st.warning("Playwright is not available. Please install Playwright.")
         return []
 
-    driver.get(video_url)
-    time.sleep(5)
-
     comments = []
-    try:
-        body = driver.find_element(By.TAG_NAME, "body")
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(video_url)
+        time.sleep(5)
 
-        for _ in range(8):  # Scroll multiple times
-            body.send_keys(Keys.PAGE_DOWN)
-            time.sleep(2)
+        try:
+            # Scroll down to load comments
+            for _ in range(8):
+                page.keyboard.press("PageDown")
+                time.sleep(2)
 
-        comments_elements = driver.find_elements(By.CSS_SELECTOR, "#content-text")
-        comments = [comment.text for comment in comments_elements if comment.text.strip()]
-    except Exception as e:
-        st.error(f"Error scraping YouTube: {e}")
+            comments_elements = page.query_selector_all("#content-text")
+            comments = [comment.inner_text() for comment in comments_elements if comment.inner_text().strip()]
+        except Exception as e:
+            st.error(f"Error scraping YouTube: {e}")
 
-    driver.quit()
+        browser.close()
     return comments
 
 # Function to clean comments
@@ -95,7 +80,7 @@ def detect_spam(comments):
     spam_count = sum(1 for comment in comments if any(keyword.lower() in comment.lower() for keyword in spam_keywords))
     return round((spam_count / total_comments) * 100, 2) if total_comments > 0 else 0
 
-# Function to analyze comments with Groq AI
+# Function to analyze comments with Grok AI
 def analyze_comments_with_grok(comments):
     if not comments:
         return "No comments found for analysis."
@@ -124,11 +109,11 @@ def analyze_comments_with_grok(comments):
     }
 
     headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Authorization": f"Bearer {GROK_API_KEY}",
         "Content-Type": "application/json"
     }
 
-    response = requests.post(GROQ_API_URL, json=payload, headers=headers)
+    response = requests.post(GROK_API_URL, json=payload, headers=headers)
     
     if response.status_code == 200:
         return response.json().get("choices", [{}])[0].get("message", {}).get("content", "No response from AI.")
