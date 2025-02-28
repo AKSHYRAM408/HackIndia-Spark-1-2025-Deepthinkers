@@ -11,10 +11,10 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 
-# Load API Key securely from Streamlit Secrets
+# Load API Key securely from .env file
 load_dotenv()
-GROK_API_KEY = os.getenv("GROQ_API_KEY")
-GROK_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 # Set up Selenium options
 def get_driver():
@@ -25,40 +25,50 @@ def get_driver():
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
 
-    # Detect ChromeDriver path
-    driver_path = shutil.which("chromedriver")
+    # Automatically detect paths
+    chrome_path = shutil.which("chromium") or shutil.which("google-chrome") or "/usr/bin/chromium-browser"
+    driver_path = shutil.which("chromedriver") or "/usr/bin/chromedriver"
 
+    if not chrome_path:
+        st.warning("⚠️ Chromium is missing. Install it or run locally.")
+        return None
     if not driver_path:
-        raise Exception("🚨 ChromeDriver is missing! Install it and add to PATH.")
+        st.warning("⚠️ ChromeDriver is missing. Install it or run locally.")
+        return None
 
     service = Service(driver_path)
     return webdriver.Chrome(service=service, options=options)
 
-# Function to scrape Instagram comments using Selenium
+# Function to scrape Instagram comments
 def scrape_instagram_comments(reel_url):
-    try:
-        driver = get_driver()
-        driver.get(reel_url)
-        time.sleep(5)
-
-        comments = []
-        comments_elements = driver.find_elements(By.CSS_SELECTOR, "ul li span")
-        comments = [comment.text for comment in comments_elements if comment.text.strip()]
-
-        driver.quit()
-        return comments
-    except Exception as e:
-        st.error(f"⚠️ Error scraping Instagram: {e}")
+    driver = get_driver()
+    if driver is None:
         return []
 
-# Function to scrape YouTube comments using Selenium
-def scrape_youtube_comments(video_url):
-    try:
-        driver = get_driver()
-        driver.get(video_url)
-        time.sleep(5)
+    driver.get(reel_url)
+    time.sleep(5)
 
-        comments = []
+    comments = []
+    try:
+        comments_elements = driver.find_elements(By.CSS_SELECTOR, "ul li span")
+        comments = [comment.text for comment in comments_elements if comment.text.strip()]
+    except Exception as e:
+        st.error(f"Error scraping Instagram: {e}")
+
+    driver.quit()
+    return comments
+
+# Function to scrape YouTube comments
+def scrape_youtube_comments(video_url):
+    driver = get_driver()
+    if driver is None:
+        return []
+
+    driver.get(video_url)
+    time.sleep(5)
+
+    comments = []
+    try:
         body = driver.find_element(By.TAG_NAME, "body")
 
         for _ in range(8):  # Scroll multiple times
@@ -67,23 +77,11 @@ def scrape_youtube_comments(video_url):
 
         comments_elements = driver.find_elements(By.CSS_SELECTOR, "#content-text")
         comments = [comment.text for comment in comments_elements if comment.text.strip()]
-
-        driver.quit()
-        return comments
     except Exception as e:
-        st.error(f"⚠️ Error scraping YouTube: {e}")
-        return []
+        st.error(f"Error scraping YouTube: {e}")
 
-# Alternative API Method for Instagram (For Cloud)
-def get_instagram_comments_via_api(media_id, access_token):
-    url = f"https://graph.facebook.com/v18.0/{media_id}/comments?access_token={access_token}"
-    response = requests.get(url)
-
-    if response.status_code == 200:
-        data = response.json()
-        return [comment["text"] for comment in data.get("data", [])]
-    else:
-        return []
+    driver.quit()
+    return comments
 
 # Function to clean comments
 def clean_comment(comment):
@@ -95,10 +93,9 @@ spam_keywords = ["follow me", "free money", "click this link", "DM us", "buy fol
 def detect_spam(comments):
     total_comments = len(comments)
     spam_count = sum(1 for comment in comments if any(keyword.lower() in comment.lower() for keyword in spam_keywords))
-
     return round((spam_count / total_comments) * 100, 2) if total_comments > 0 else 0
 
-# Function to analyze comments with Grok AI
+# Function to analyze comments with Groq AI
 def analyze_comments_with_grok(comments):
     if not comments:
         return "No comments found for analysis."
@@ -127,11 +124,11 @@ def analyze_comments_with_grok(comments):
     }
 
     headers = {
-        "Authorization": f"Bearer {GROK_API_KEY}",
+        "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
     }
 
-    response = requests.post(GROK_API_URL, json=payload, headers=headers)
+    response = requests.post(GROQ_API_URL, json=payload, headers=headers)
     
     if response.status_code == 200:
         return response.json().get("choices", [{}])[0].get("message", {}).get("content", "No response from AI.")
@@ -154,13 +151,7 @@ if analyze_button:
         with st.spinner("Detecting platform and scraping comments..."):
             if "instagram.com" in url:
                 platform = "Instagram"
-                try:
-                    comments = scrape_instagram_comments(url)
-                except Exception:
-                    st.warning("Selenium not supported. Trying API method...")
-                    media_id = "YOUR_MEDIA_ID"  # Replace with actual Media ID
-                    access_token = "YOUR_ACCESS_TOKEN"  # Replace with your Access Token
-                    comments = get_instagram_comments_via_api(media_id, access_token)
+                comments = scrape_instagram_comments(url)
             elif "youtube.com" in url or "youtu.be" in url:
                 platform = "YouTube"
                 comments = scrape_youtube_comments(url)
@@ -174,7 +165,7 @@ if analyze_button:
             cleaned_comments = [clean_comment(comment) for comment in comments]
             comments_text = "\n".join(cleaned_comments)
 
-            st.success(f"✅ Comments scraped successfully from {platform}!")
+            st.success(f"Comments scraped successfully from {platform}!")
 
             with st.spinner("Analyzing comments with AI..."):
                 ai_response = analyze_comments_with_grok(comments_text)
@@ -183,6 +174,6 @@ if analyze_button:
 
             st.subheader(f"💡 AI Insights on {platform}:")
             st.write(ai_response)
-  
+            st.write(f"🚨 **Spam Percentage:** {spam_percentage}%")
     else:
         st.error("Please enter a valid URL.")
