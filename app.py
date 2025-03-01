@@ -11,7 +11,6 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 
-# Load API key from .env file
 load_dotenv()
 GROK_API_KEY = os.getenv("GROQ_API_KEY")
 
@@ -21,7 +20,6 @@ if not GROK_API_KEY:
 
 GROK_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-# Function to scrape Instagram comments with usernames
 def scrape_instagram_comments(reel_url):
     options = Options()
     options.add_argument("--headless")
@@ -47,7 +45,6 @@ def scrape_instagram_comments(reel_url):
     driver.quit()
     return comments_data
 
-# Function to scrape YouTube comments with usernames
 def scrape_youtube_comments(video_url):
     options = Options()
     options.add_argument("--headless")
@@ -78,7 +75,6 @@ def scrape_youtube_comments(video_url):
     driver.quit()
     return comments_data
 
-# Function to detect spam users and return spam comments
 def detect_spam(comments_with_users):
     spam_keywords = ["follow me", "free money", "click this link", "DM us", "buy followers", 
                      "promotion", "promo code", "earn cash", "instant profit"]
@@ -91,7 +87,6 @@ def detect_spam(comments_with_users):
 
     return spam_comments_list
 
-# Function to analyze comments with AI (Grok API)
 def analyze_comments_with_grok(comments):
     messages = [
         {"role": "system", "content": "You are an expert social media analyst."},
@@ -126,12 +121,10 @@ def analyze_comments_with_grok(comments):
     else:
         return f"Error: {response.status_code} - {response.text}"
 
-# Function to get AI suggestions on restricting spam users
 def suggest_spam_user_restrictions(spam_users_list):
     if not spam_users_list:
         return "No frequent spammers detected."
 
-    # Format spam user details
     spam_details = "\n".join([f"{user_id}: {comment}" for user_id, comment in spam_users_list])
 
     messages = [
@@ -162,7 +155,6 @@ def suggest_spam_user_restrictions(spam_users_list):
     else:
         return f"Error: {response.status_code} - {response.text}"
 
-# Streamlit UI
 st.set_page_config(page_title="Social Media Comment Analyzer", page_icon="📲", layout="wide")
 
 st.markdown("<h1 style='text-align: center; color: #E1306C;'>📲 Social Media Comment Analyzer</h1>", unsafe_allow_html=True)
