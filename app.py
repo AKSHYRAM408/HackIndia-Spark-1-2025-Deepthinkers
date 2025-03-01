@@ -206,3 +206,4 @@ if analyze_button:
             st.write(restriction_suggestions)
     else:
         st.error("Please enter a valid URL.")
+ 
